@@ -1,0 +1,82 @@
+---
+title: "01_data"
+author: "Sglatt"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r git, eval=FALSE}
+usethis::create_from_github("https://github.com/Sfglatt/wish-to-live-die-overlap.git",
+  destdir = "~/Github/wish-to-live-die-overlap"
+)
+```
+
+```{r packages}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  require("dplyr")
+}
+if (!require("psych")) {
+  install.packages("psych")
+  require("psych")
+}
+if (!require("tidyr")) {
+  install.packages("tidyr")
+  require("tidyr")
+}
+```
+
+# Import dataset
+```{r data and dir}
+# Import RCT data (from project life force repo)
+plf_data <- read.csv("~/Labs/Github/project-life-force/project-life-force/01_Created_datasets/Merged_plf_data_filtered_2025-08-05.csv")
+
+# Filter out month = -9 (lifetime variable)
+plf_data <- plf_data %>%
+  dplyr::filter(month != -9)
+
+# Make a folder to save the output
+if (!dir.exists("01_output")) {
+  dir.create("01_output")
+}
+```
+
+# Dataset for models
+```{r dataset}
+# Baseline dataset
+plf_data_baseline_1 <- plf_data %>%
+  dplyr::filter(month == 0)
+
+# Remove missingness in baseline dataset (all study variables) 
+plf_data_baseline_2 <- plf_data_baseline_1 %>%
+  filter(
+    !is.na(q01_ssi), # Beck Scale for Suicidal Ideation wish to live item
+    !is.na(q02_ssi), # Beck Scale for Suicidal Ideation wish to die item
+    !is.na(bdi), # Beck Depression Inventory II
+    !is.na(bhs), # Beck Hopelessness Scale
+    !is.na(srcs17), # Suicide-Related Coping Scale
+    !is.na(inq_pb), # Interpersonal Needs Questionnaire burden subscale
+    !is.na(inq_tb), # Interpersonal Needs Questionnaire belonging subscale
+    !is.na(rls), # Reasons for Living inventory
+  )
+```
+
+# Save dataset
+```{r save data}
+write.csv(plf_data_baseline_2,
+  file = paste0(
+    "01_output/Baseline_data_",
+    format(Sys.Date(), "%Y-%m-%d"), ".csv"
+  ),
+  row.names = TRUE
+)
+
+# Versions
+# 12-19-2025: initial analysis dataset
+```
+
+

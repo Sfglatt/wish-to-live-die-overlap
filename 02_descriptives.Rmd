@@ -1,0 +1,219 @@
+---
+title: "02_descriptives"
+author: "Sglatt"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+if (!require("dplyr")) {
+  install.packages("dplyr")
+  require("dplyr")
+}
+if (!require("psych")) {
+  install.packages("psych")
+  require("psych")
+}
+if (!require("ltm")) {
+  install.packages("ltm")
+  require("ltm")
+}
+```
+
+# Import dataset
+```{r data and dir}
+# Import the dataset created in 01_Data
+Baseline_data <- read.csv("01_output/Baseline_data_2025-12-19.csv")
+
+# Make a folder to save the output
+if (!dir.exists("02_output")) {
+  dir.create("02_output")
+}
+```
+
+# Demographics
+```{r demographics}
+# Demographic descriptives for baseline dataset (N = 192)
+variables <- c(
+  "sex_demo", "race_demo", "degree_demo", "employ_demo",
+  "marry_demo", "treat_demo", "support_demo", "kids_demo",
+  "alone_demo", "prior_demo", "prison_demo", "access_demo",
+  "latino_demo"
+)
+
+for (var in variables) {
+  cat("\n###", var, "###\n")
+  tbl <- table(Baseline_data[[var]])
+  print(tbl)
+  cat("\ %  of 192:\n")
+  print(round(100 * tbl / 192, 2))
+}
+
+# Age
+summary(Baseline_data$age_demo)
+sd(Baseline_data$age_demo, na.rm = TRUE)
+sum(!is.na(Baseline_data$age_demo))
+```
+
+# Lifetime suicidal behavior
+```{r SB data}
+cssrs_labels <- read.csv("~/Labs/Github/project-life-force/project-life-force/Raw_datasets/CSSRS_Baseline_Recent_Labels.csv")
+cssrs_raw <- read.csv("~/Labs/Github/project-life-force/project-life-force/Raw_datasets/CSSRS_Baseline_Recent_Raw.csv")
+
+# Fix the IDs
+cssrs_raw <- cssrs_raw %>%
+  mutate(subject_id = case_when(
+    str_detect(subject_id, "^(?i)pp\\d+") ~ str_replace(subject_id, "^(?i)pp(\\d+)", "PH-\\1"),
+    str_detect(subject_id, "^(?i)pt1\\d+") ~ str_replace(subject_id, "^(?i)pt1(\\d+)", "TX-\\1"),
+    str_detect(subject_id, "^(?i)pt\\d+") ~ str_replace(subject_id, "^(?i)pt(\\d+)", "TX-\\1"),
+    str_detect(subject_id, "^(?i)pn\\d+") ~ str_replace(subject_id, "^(?i)pn(\\d+)", "NP-\\1"),
+    str_detect(subject_id, "^(?i)p\\d+") ~ str_replace(subject_id, "^(?i)p(\\d+)", "BX-\\1"),
+    TRUE ~ subject_id
+  )) %>%
+  rename(id = subject_id) # and rename the column
+
+cssrs_labels <- cssrs_labels %>%
+  mutate(Subject.ID = case_when(
+    str_detect(Subject.ID, "^(?i)pp\\d+") ~ str_replace(Subject.ID, "^(?i)pp(\\d+)", "PH-\\1"),
+    str_detect(Subject.ID, "^(?i)pt1\\d+") ~ str_replace(Subject.ID, "^(?i)pt1(\\d+)", "TX-\\1"),
+    str_detect(Subject.ID, "^(?i)pt\\d+") ~ str_replace(Subject.ID, "^(?i)pt(\\d+)", "TX-\\1"),
+    str_detect(Subject.ID, "^(?i)pn\\d+") ~ str_replace(Subject.ID, "^(?i)pn(\\d+)", "NP-\\1"),
+    str_detect(Subject.ID, "^(?i)p\\d+") ~ str_replace(Subject.ID, "^(?i)p(\\d+)", "BX-\\1"),
+    TRUE ~ Subject.ID
+  )) %>%
+  rename(id = Subject.ID) 
+
+# Check how many IDs overlap with the ids in the events sheet (all)
+length(intersect(cssrs_raw$id, Baseline_data$id))
+length(intersect(cssrs_labels$id, Baseline_data$id))
+
+# Filter the C-SSRS dataset to the present 192
+cssrs_raw_filtered <- cssrs_raw %>%
+  filter(id %in% Baseline_data$id)
+
+cssrs_labels_filtered <- cssrs_labels %>%
+  filter(id %in% Baseline_data$id)
+
+# "cssrs_actattrec_bl" = Actual Attempt (Recent)
+table(cssrs_raw_filtered$cssrs_actattrec_bl)
+table(cssrs_labels_filtered$"Actual.Attempt..Recent.......Description..A.potentially.self.injurious.act.committed.with.at.least.some.wish.to.die..as.a.result.of.act..Behavior.was.in.part.thought.of.as.method.to.kill.oneself..Intent.does.not.have.to.be.100....If.there.is.any.intent.desire.to.die.associated.with.the.act..then.it.can.be.considered.an.actual.suicide.attempt..There.does.not.have.to.be.any.injury.or.harm..just.the.potential.for.injury.or.harm..If.person.pulls.trigger.while.gun.is.in.mouth.but.gun.is.broken.so.no.injury.results..this.is.considered.an.attempt.......Inferring.Intent..Even.if.an.individual.denies.intent.wish.to.die..it.may.be.inferred.clinically.from.the.behavior.or.circumstances..For.example..a.highly.lethal.act.that.is.clearly.not.an.accident.so.no.other.intent.but.suicide.can.be.inferred..e.g...gunshot.to.head..jumping.from.window.of.a.high.floor.story...Also..if.someone.denies.intent.to.die..but.they.thought.that.what.they.did.could.be.lethal..intent.may.be.inferred......Potential.Questions.to.ask.about.the.PAST.YEAR...In.the.past.year..have.you.made.a.suicide.attempt...In.the.past.year..have.you.done.anything.to.harm.yourself...In.the.past.year..have.you.done.anything.dangerous.where.you.could.have.died...What.did.you.do...Did.you______.as.a.way.to.end.your.life....Did.you.want.to.die..even.a.little..when.you_____....Were.you.trying.to.end.your.life.when.you._____...Or.Did.you.think.it.was.possible.you.could.have.died.from_____...Or.did.you.do.it.purely.for.other.reasons...without.ANY.intention.of.killing.yourself..like.to.relieve.stress..feel.better....get.sympathy..or.get.something.else.to.happen.....Self.Injurious.Behavior.without.suicidal.intent.")
+
+# "cssrs_intattrec_bl" = Interrupted Attempt (Recent)
+table(cssrs_raw_filtered$cssrs_intattrec_bl)
+table(cssrs_labels_filtered$"Interrupted.Attempt..Recent.........Description..When.the.person.is.interrupted..by.an.outside.circumstance..from.starting.the.potentially.self.injurious.act..if.not.for.that..actual.attempt.would.have.occurred......Overdose.example..Person.has.pills.in.hand.but.is.stopped.from.ingesting...Once.they.ingest.any.pills..this.becomes.an.attempt.rather.than.an.interrupted.attempt..Shooting..Person.has.gun.pointed.toward.self..gun.is.taken.away.by.someone.else..or.is.somehow.prevented.from.pulling.trigger..Once.they.pull.the.trigger..even.if.the.gun.fails.to.fire..it.is.an.attempt..Jumping..Person.is.poised.to.jump..is.grabbed.and.taken.down.from.ledge..Hanging..Person.has.noose.around.neck.but.has.not.yet.started.to.hang...is.stopped.from.doing.so......In.the.past.year..has.there.been.a.time.when.you.started.to.do.something.to.end.your.life.but.someone.or.something.stopped.you.before.you.actually.did.anything.." )
+
+# "cssrs_abtattrec_bl" = Aborted or Self-Interrupted Attempt (Recent)
+table(cssrs_raw_filtered$cssrs_abtattrec_bl)
+table(cssrs_labels_filtered$"Aborted.or.Self.Interrupted.Attempt..Recent........Description..When.person.begins.to.take.steps.toward.making.a.suicide.attempt..but.stops.themselves.before.they.actually.have.engaged.in.any.self.destructive.behavior..Examples.are.similar.to.interrupted.attempts..except.that.the.individual.stops.him.herself..instead.of.being.stopped.by.something.else......In.the.past.year..has.there.been.a.time.when.you.started.to.do.something.to.try.to.end.your.life.but.you.stopped.yourself.before.you.actually.did.anything..")
+
+# "cssrs_preprec_bl" = Preparatory Acts or Behavior (Recent)
+table(cssrs_raw_filtered$cssrs_preprec_bl)
+table(cssrs_labels_filtered$"Preparatory.Acts.or.Behavior..Recent......Description..Acts.or.preparation.towards.imminently.making.a.suicide.attempt..This.can.include.anything.beyond.a.verbalization.or.thought..such.as.assembling.a.specific.method..e.g...buying.pills..purchasing.a.gun..or.preparing.for.one.s.death.by.suicide..e.g...giving.things.away..writing.a.suicide.note........In.the.past.year..have.you.taken.any.steps.towards.making.a.suicide.attempt.or.preparing.to.kill.yourself..such.as.collecting.pills..getting.a.gun..giving.valuables.away.or.writing.a.suicide.note...")
+
+# "cssrs_actattlt_bl" = Actual Attempt (Lifetime)
+table(cssrs_raw_filtered$cssrs_actattlt_bl)
+table(cssrs_labels_filtered$"Actual.Attempt..Lifetime.......Definition..A.potentially.self.injurious.act.committed.with.at.least.some.wish.to.die..as.a.result.of.act..Behavior.was.in.part.thought.of.as.method.to.kill.oneself..Intent.does.not.have.to.be.100....If.there.is.any.intent.desire.to.die.associated.with.the.act..then.it.can.be.considered.an.actual.suicide.attempt..There.does.not.have.to.be.any.injury.or.harm..just.the.potential.for.injury.or.harm..If.person.pulls.trigger.while.gun.is.in.mouth.but.gun.is.broken.so.no.injury.results..this.is.considered.an.attempt.......Inferring.Intent..Even.if.an.individual.denies.intent.wish.to.die..it.may.be.inferred.clinically.from.the.behavior.or.circumstances..For.example..a.highly.lethal.act.that.is.clearly.not.an.accident.so.no.other.intent.but.suicide.can.be.inferred..e.g...gunshot.to.head..jumping.from.window.of.a.high.floor.story...Also..if.someone.denies.intent.to.die..but.they.thought.that.what.they.did.could.be.lethal..intent.may.be.inferred......Potential.Questions.to.Ask.for.Lifetime...Have.you.made.a.suicide.attempt...Have.you.done.anything.to.harm.yourself...Have.you.done.anything.dangerous.where.you.could.have.died...What.did.you.do...Did.you______.as.a.way.to.end.your.life....Did.you.want.to.die..even.a.little..when.you_____....Were.you.trying.to.end.your.life.when.you._____...Or.Did.you.think.it.was.possible.you.could.have.died.from_____...Or.did.you.do.it.purely.for.other.reasons...without.ANY.intention.of.killing.yourself..like.to.relieve.stress..feel.better....get.sympathy..or.get.something.else.to.happen.....Self.Injurious.Behavior.without.suicidal.intent.")
+
+# "cssrs_intattlt_bl" = Interrupted Attempt (Lifetime)
+table(cssrs_raw_filtered$cssrs_intattlt_bl)
+table(cssrs_labels_filtered$"Interrupted.Attempt..Lifetime........Description..When.the.person.is.interrupted..by.an.outside.circumstance..from.starting.the.potentially.self.injurious.act..if.not.for.that..actual.attempt.would.have.occurred......Overdose.example..Person.has.pills.in.hand.but.is.stopped.from.ingesting...Once.they.ingest.any.pills..this.becomes.an.attempt.rather.than.an.interrupted.attempt..Shooting..Person.has.gun.pointed.toward.self..gun.is.taken.away.by.someone.else..or.is.somehow.prevented.from.pulling.trigger..Once.they.pull.the.trigger..even.if.the.gun.fails.to.fire..it.is.an.attempt..Jumping..Person.is.poised.to.jump..is.grabbed.and.taken.down.from.ledge..Hanging..Person.has.noose.around.neck.but.has.not.yet.started.to.hang...is.stopped.from.doing.so......In.your.lifetime..has.there.been.a.time.when.you.started.to.do.something.to.end.your.life.but.someone.or.something.stopped.you.before.you.actually.did.anything..")
+
+# "cssrs_abtattlt_bl" = Aborted or Self-Interrupted Attempt (Lifetime)
+table(cssrs_raw_filtered$cssrs_abtattlt_bl)
+table(cssrs_labels_filtered$"Aborted.or.Self.Interrupted.Attempt..Lifetime........Description..When.person.begins.to.take.steps.toward.making.a.suicide.attempt..but.stops.themselves.before.they.actually.have.engaged.in.any.self.destructive.behavior..Examples.are.similar.to.interrupted.attempts..except.that.the.individual.stops.him.herself..instead.of.being.stopped.by.something.else......In.your.lifetime..has.there.been.a.time.when.you.started.to.do.something.to.try.to.end.your.life.but.you.stopped.yourself.before.you.actually.did.anything..")
+
+# "cssrs_preplt_bl" = Preparatory Acts or Behavior (Lifetime)
+table(cssrs_raw_filtered$cssrs_preplt_bl)
+table(cssrs_labels_filtered$"Preparatory.Acts.or.Behavior..Lifetime......Description..Acts.or.preparation.towards.imminently.making.a.suicide.attempt..This.can.include.anything.beyond.a.verbalization.or.thought..such.as.assembling.a.specific.method..e.g...buying.pills..purchasing.a.gun..or.preparing.for.one.s.death.by.suicide..e.g...giving.things.away..writing.a.suicide.note........In.your.lifetime..have.you.taken.any.steps.towards.making.a.suicide.attempt.or.preparing.to.kill.yourself..such.as.collecting.pills..getting.a.gun..giving.valuables.away.or.writing.a.suicide.note..."  )
+```
+
+# Study variables descriptives
+```{r variable desc}
+# Descriptive/summary stats table for primary variables
+Baseline_data$cssrs_sevrec_bl <- cssrs_raw_filtered$cssrs_sevrec_bl[match(Baseline_data$id, cssrs_raw_filtered$id)]
+Baseline_data$cssrs_sevrec_bl <- as.numeric(Baseline_data$cssrs_sevrec_bl)
+
+cor.test(Baseline_data$cssrs_sevrec_bl, Baseline_data$ssi)
+
+# Baseline dataset (n = 192)
+Baseline_summary <- psych::describe(Baseline_data %>%
+  dplyr::select(
+    q01_ssi, # Wish to live
+    q02_ssi, # Wish to die
+    bdi, # Beck Depression Inventory
+    bhs, # Beck Hopelessness Scale
+    rls, # Reasons for Living Inventory
+    inq_pb, # Interpersonal Needs Questionnaire - Perceived Burdensomeness
+    inq_tb # Interpersonal Needs Questionnaire - Thwarted Belonging
+  )) 
+
+# Look at the summary table
+View(Baseline_summary)
+
+# Save the table
+write.csv(Baseline_summary,
+  file = paste0(
+    "02_output/Descriptives_baseline_192_",
+    format(Sys.Date(), "%Y-%m-%d"), ".csv"
+  ),
+  row.names = TRUE
+)
+```
+
+# Scale reliability
+```{r alpha reliability}
+# INQ-15
+# Perceived burdensomeness subscale
+ltm::cronbach.alpha(
+  INQ_PB_items <- Baseline_data %>%
+    dplyr::select(matches("^q0[1-6]_inq$")),
+  CI = TRUE,
+  na.rm = TRUE
+)
+
+# Thwarted belonging subscale
+ltm::cronbach.alpha(
+  Baseline_data %>%
+    dplyr::select(matches("^q0[7-9]_inq$|^q1[0-5]_inq$")),
+  CI = TRUE,
+  na.rm = TRUE
+)
+
+# SRCS-17
+ltm::cronbach.alpha(
+  SRC_items <- Baseline_data %>%
+    dplyr::select(matches("^q\\d{2}_srcs$")) %>% 
+    dplyr::select(-matches("^q(02|07|15|21)_srcs$")), # Remove items 2, 7, 15, 21 (not part of 17-item version)
+  CI = TRUE,
+  na.rm = TRUE
+)
+
+# BHS
+ltm::cronbach.alpha(
+  Baseline_data %>%
+    dplyr::select(matches("^q\\d{2}_bhs$")),
+  CI = TRUE,
+  na.rm = TRUE
+)
+
+# BDI-II
+ltm::cronbach.alpha(
+  Baseline_data %>%
+    dplyr::select(matches("^q\\d{2}_bdi$")),
+  CI = TRUE,
+  na.rm = TRUE
+)
+
+# RLI
+ltm::cronbach.alpha(
+  Baseline_data %>%
+    dplyr::select(matches("^q\\d{2}_rli$")),
+  CI = TRUE,
+  na.rm = TRUE
+)
+```
+
