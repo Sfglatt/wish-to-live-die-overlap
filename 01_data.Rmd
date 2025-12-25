@@ -47,27 +47,35 @@ if (!dir.exists("01_output")) {
 
 # Dataset for models
 ```{r dataset}
-# Baseline dataset
-plf_data_baseline_1 <- plf_data %>%
-  dplyr::filter(month == 0)
-
-# Remove missingness in baseline dataset (all study variables) 
-plf_data_baseline_2 <- plf_data_baseline_1 %>%
+# People with complete data on all baseline study variables
+complete_ids <- plf_data %>%
+  filter(month == 0) %>%
   filter(
-    !is.na(q01_ssi), # Beck Scale for Suicidal Ideation wish to live item
-    !is.na(q02_ssi), # Beck Scale for Suicidal Ideation wish to die item
-    !is.na(bdi), # Beck Depression Inventory II
-    !is.na(bhs), # Beck Hopelessness Scale
-    !is.na(srcs17), # Suicide-Related Coping Scale
-    !is.na(inq_pb), # Interpersonal Needs Questionnaire burden subscale
-    !is.na(inq_tb), # Interpersonal Needs Questionnaire belonging subscale
-    !is.na(rls), # Reasons for Living inventory
-  )
+    !is.na(q01_ssi),
+    !is.na(q02_ssi),
+    !is.na(bdi),
+    !is.na(bhs),
+    !is.na(srcs17),
+    !is.na(inq_pb),
+    !is.na(inq_tb),
+    !is.na(rls)
+  ) %>%
+  pull(id) %>% 
+  unique()
+
+# Keep only participants with complete baseline data in the full longitudinal dataset
+plf_data_clean <- plf_data %>%
+  filter(id %in% complete_ids)
+
+# Restrict to baseline 
+plf_data_baseline <- plf_data_clean %>%
+  filter(month == 0)
 ```
 
 # Save dataset
 ```{r save data}
-write.csv(plf_data_baseline_2,
+# Baseline
+write.csv(plf_data_baseline,
   file = paste0(
     "01_output/Baseline_data_",
     format(Sys.Date(), "%Y-%m-%d"), ".csv"
@@ -75,8 +83,17 @@ write.csv(plf_data_baseline_2,
   row.names = TRUE
 )
 
+# Full longitudinal
+write.csv(plf_data_clean,
+  file = paste0(
+    "01_output/Temporal_data_",
+    format(Sys.Date(), "%Y-%m-%d"), ".csv"
+  ),
+  row.names = TRUE
+)
 # Versions
-# 12-19-2025: initial analysis dataset
+# 12-19-2025: Initial analysis dataset
+# 12-24-2025: No change to baseline (initial dataset), added longitudinal dataset
 ```
 
 

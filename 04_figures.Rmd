@@ -92,8 +92,10 @@ dev.off()
 ```{r plot data}
 # Dataset/variables created in 03_analysis.Rmd
 Baseline_data <- read.csv("02_output/Baseline_data_vars_2025-12-21.csv")
+```
 
 # Make a theme for all plots
+```{r plot theme}
 pub_theme <- theme_minimal(base_size = 14) +
   theme(
     text = element_text(family = "Times New Roman"),
@@ -292,4 +294,62 @@ ggplot(tri_long, aes(plot_id, Proportion, fill = Component)) +
     plot.margin = margin(20, 10, 10, 10)
   )
 ```
+
+# Data for MLM figures
+```{r data temp}
+Temporal_data <- read.csv("02_output/Temporal_data_vars_2025-12-25.csv")
+```
+
+# Visualize random effects
+```{r ranef vis}
+# Models to extract effects from
+model_shared <- lmer(shared ~ 1 + (1 | id), data = Temporal_data)
+model_WTL_unique <- lmer(WTL_unique ~ 1 + (1 | id), data = Temporal_data)
+model_WTD_unique <- lmer(WTD_unique ~ 1 + (1 | id), data = Temporal_data)
+
+# Extract random intercepts for people
+re_shared <- ranef(model_shared, condVar = TRUE)$id %>%
+  tibble::rownames_to_column("id") %>%
+  rename(re_shared = `(Intercept)`)
+
+re_WTL <- ranef(model_WTL_unique, condVar = TRUE)$id %>%
+  tibble::rownames_to_column("id") %>%
+  rename(re_WTL = `(Intercept)`)
+
+re_WTD <- ranef(model_WTD_unique, condVar = TRUE)$id %>%
+  tibble::rownames_to_column("id") %>%
+  rename(re_WTD = `(Intercept)`)
+
+# Merge
+re_all <- re_shared %>%
+  left_join(re_WTL, by = "id") %>%
+  left_join(re_WTD, by = "id")
+
+# Reshape data to long format for vis
+re_long <- re_all %>%
+  pivot_longer(
+    cols = c(re_shared, re_WTL, re_WTD),
+    names_to = "component",
+    values_to = "random_intercept"
+  ) %>%
+  mutate(component = recode(component,
+    re_shared = "Shared Component",
+    re_WTL = "Unique WTL",
+    re_WTD = "Unique WTD"
+  ))
+
+# Faceted density plot
+ggplot(re_long, aes(x = random_intercept, fill = component)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_manual(values = c("mediumpurple", "#66CCFF", "#FF66CC")) +
+  labs(
+    x = "Random Intercept", y = "Density", fill = "Component",
+    title = ""
+  ) +
+  facet_wrap(~component, ncol = 1, scales = "free") + #
+  pub_theme +
+  theme(legend.position = "none")
+```
+
+
 

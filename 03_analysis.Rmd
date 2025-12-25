@@ -30,12 +30,17 @@ if (!require("apaTables")) {
   install.packages("apaTables")
   require("apaTables")
 }
+if (!require("lme4")) {
+  install.packages("lme4")
+  require("lme4")
+}
 ```
 
 # Import dataset
 ```{r data and dir}
-# Import the dataset created in 01_Data
-Baseline_data <- read.csv("01_output/Baseline_data_2025-12-19.csv")
+# Import the datasets created in 01_Data
+Baseline_data <- read.csv("01_output/Baseline_data_2025-12-19.csv") # Baseline
+Temporal_data <- read.csv("01_output/Temporal_data_2025-12-24.csv") # Full (including baseline)
 
 # Make a folder to save the output
 if (!dir.exists("03_output")) {
@@ -101,6 +106,26 @@ cor(Baseline_data$WTD_unique, Baseline_data$q01_ssi)
 
 # Summary
 describe(Baseline_data[, c("WTL_unique", "WTD_unique")])
+
+# Reverse-score WTL so higher = stronger wish to live
+Baseline_data <- Baseline_data %>%
+  mutate(
+    q01_ssi_rev = max(q01_ssi, na.rm = TRUE) - q01_ssi
+  )
+
+model_WTL_on_WTD_rev <- lm(q01_ssi_rev ~ q02_ssi, data = Baseline_data)
+Baseline_data$WTL_unique_rev <- residuals(model_WTL_on_WTD_rev)
+
+# WTD without WTL
+model_WTD_on_WTL_rev <- lm(q02_ssi ~ q01_ssi_rev, data = Baseline_data)
+Baseline_data$WTD_unique_rev <- residuals(model_WTD_on_WTL_rev)
+
+# Verify
+cor(Baseline_data$WTL_unique_rev, Baseline_data$q02_ssi)
+cor(Baseline_data$WTD_unique_rev, Baseline_data$q01_ssi_rev)
+
+# Summary
+describe(Baseline_data[, c("WTL_unique", "WTL_unique_rev", "WTD_unique", "WTD_unique_rev")])
 ```
 
 # Isolate the shared variation among WTL/WTD
@@ -119,6 +144,7 @@ cor(Baseline_data$WTL_WTD_shared, Baseline_data$q02_ssi)
 # Look at descriptives
 describe(Baseline_data[, c("WTL_unique", "WTD_unique", "WTL_WTD_shared")])
 ```
+
 
 # sensitivity check of shared variation with PCA by using SEM
 ```{r shared var sem}
@@ -256,9 +282,15 @@ Baseline_data$WTL_WTD_shared_abs <- abs(Baseline_data$WTL_WTD_shared)
 # Also make a combined unique score
 Baseline_data$Unique_combined_abs <- Baseline_data$WTL_unique_abs + Baseline_data$WTD_unique_abs
 
+# Make a variable for the maximum unique absolute value
+Baseline_data$Unique_max_abs <- pmax(
+  Baseline_data$WTL_unique_abs,
+  Baseline_data$WTD_unique_abs
+)
+
 
 # Look at descriptives
-describe(Baseline_data[, c("WTL_unique_abs", "WTD_unique_abs", "Unique_combined_abs", "WTL_WTD_shared_abs")])
+describe(Baseline_data[, c("WTL_unique_abs", "WTD_unique_abs", "Unique_max_abs", "Unique_combined_abs", "WTL_WTD_shared_abs")])
 
 # Paired t-tests
 jmv::ttestPS(
@@ -266,7 +298,7 @@ jmv::ttestPS(
   pairs = list(
     list(i1 = "WTL_unique_abs", i2 = "WTL_WTD_shared_abs"), # unique WTL vs overlap
     list(i1 = "WTD_unique_abs", i2 = "WTL_WTD_shared_abs"), # unique WTD vs overlap
-    list(i1 = "Unique_combined_abs", i2 = "WTL_WTD_shared_abs") # unique WTL + unique WTD vs overlap
+    list(i1 = "Unique_max_abs", i2 = "WTL_WTD_shared_abs") # maximum absolute value of either unique one vs overlap
   ),
   wilcoxon = TRUE,
   norm = TRUE,
@@ -505,17 +537,104 @@ cor(cor_results_df$pearson_WTD_resid, cor_results_df$polyserial_WTD_resid)
 cor(cor_results_df$pearson_shared, cor_results_df$polyserial_shared)
 ```
 
-# Save dataset with new variables
+# Longitudinal models of shared vs unique WTL/WTD variation
+```{r residualize and pca temporal}
+# Residualize per timepoint
+Temporal_data <- Temporal_data %>%
+  group_by(month) %>%
+  mutate(
+    WTL_unique = residuals(lm(q01_ssi ~ q02_ssi, na.action = na.exclude)),
+    WTD_unique = residuals(lm(q02_ssi ~ q01_ssi, na.action = na.exclude))
+  ) %>%
+  ungroup()
+
+# Extract shared component per timepoint 
+Temporal_data <- Temporal_data %>%
+  group_by(month) %>%
+  mutate(
+    shared = {
+      temp <- cbind(q01_ssi, q02_ssi)
+      complete_idx <- complete.cases(temp)
+      pc <- prcomp(temp[complete_idx, ], scale. = TRUE)  
+      shared_vec <- rep(NA, n()) # Deal with missing
+      shared_vec[complete_idx] <- pc$x[,1]
+      shared_vec
+    }
+  ) %>%
+  ungroup()
+
+# Sanity check 
+# Make sure the residualized WTL/WTD and PCA at baseline match what was done above
+baseline_check <- Temporal_data %>%
+  filter(month == 0) %>%
+  select(id, WTL_unique, WTD_unique, shared) %>%
+  left_join(
+    Baseline_data %>%
+      select(id, WTL_unique, WTD_unique, WTL_WTD_shared),
+    by = "id",
+    suffix = c("_temporal", "_baseline")
+  )
+
+baseline_check %>%
+  summarise(
+    cor_WTL = cor(WTL_unique_temporal, WTL_unique_baseline, use = "pairwise.complete.obs"),
+    cor_WTD = cor(WTD_unique_temporal, WTD_unique_baseline, use = "pairwise.complete.obs"),
+    cor_shared = cor(shared, WTL_WTD_shared, use = "pairwise.complete.obs")
+  ) # Good
+```
+
+# Multilevel models 
+```{r mlms}
+# Shared component
+model_shared <- lmer(shared ~ 1 + (1 | id), data = Temporal_data)
+
+# WTL_unique  
+model_WTL_unique <- lmer(WTL_unique ~ 1 + (1 | id), data = Temporal_data)
+
+# WTD_unique
+model_WTD_unique <- lmer(WTD_unique ~ 1 + (1 | id), data = Temporal_data)
+
+# Model summaries 
+summary(model_shared)
+summary(model_WTL_unique) 
+summary(model_WTD_unique)
+
+# Variance components table
+r2(model_shared)      
+icc(model_shared)     
+VarCorr(model_shared)
+
+# Results table (random effects only)
+sjPlot::tab_model(
+  model_shared, model_WTD_unique, model_WTL_unique
+)
+```
+
+# Save baseline dataset with new variables
 - residualized WTD/WTL, 
 - rank-transformed WTL/WTD and those residuals; 
 - the shared PCA component (raw and from rank-transformed), 
 - absolute values of residualized WTD/WTL + shared PCA component
 - dominant component of absolute values
+
+# Save longitudinal dataset with new variables
+- residualized WTD/WTL (each timepoint)
+- shared PCA component (each timepoint)
   
 ```{r save data}
+# Baseline
 write.csv(Baseline_data,
   file = paste0(
     "02_output/Baseline_data_vars_",
+    format(Sys.Date(), "%Y-%m-%d"), ".csv"
+  ),
+  row.names = TRUE
+)
+
+# Temporal
+write.csv(Temporal_data,
+  file = paste0(
+    "02_output/Temporal_data_vars_",
     format(Sys.Date(), "%Y-%m-%d"), ".csv"
   ),
   row.names = TRUE
@@ -526,7 +645,5 @@ write.csv(Baseline_data,
 ```{r cites}
 report::report(sessionInfo())
 ```
-
-
 
 
