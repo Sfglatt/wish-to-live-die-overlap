@@ -91,7 +91,7 @@ dev.off()
 # Data for variance figures
 ```{r plot data}
 # Dataset/variables created in 03_analysis.Rmd
-Baseline_data <- read.csv("02_output/Baseline_data_vars_2025-12-21.csv")
+Baseline_data <- read.csv("03_output/Baseline_data_vars_2025-12-28.csv")
 ```
 
 # Make a theme for all plots
@@ -156,10 +156,10 @@ combined_plot
 # Plot data
 plot_data <- Baseline_data %>%
   # Residualized + shared variation
-  dplyr::select(WTL_unique, WTD_unique, WTL_WTD_shared) %>%
+  dplyr::select(WTLz_unique, WTDz_unique, WTL_WTD_shared) %>%
   rename(
-    `WTL Unique` = WTL_unique,
-    `WTD Unique` = WTD_unique,
+    `WTL Unique` = WTLz_unique,
+    `WTD Unique` = WTDz_unique,
     `Shared Component` = WTL_WTD_shared
   ) %>%
   pivot_longer(
@@ -210,9 +210,9 @@ p_ttest
 tri_norm <- Baseline_data %>%
   # Absolute values
   transmute(
-    WTL    = abs(WTL_unique),
+    WTL    = abs(WTLz_unique),
     Shared = abs(WTL_WTD_shared),
-    WTD    = abs(WTD_unique)
+    WTD    = abs(WTDz_unique)
   ) %>%
   # Proportions
   mutate(
@@ -297,15 +297,15 @@ ggplot(tri_long, aes(plot_id, Proportion, fill = Component)) +
 
 # Data for MLM figures
 ```{r data temp}
-Temporal_data <- read.csv("02_output/Temporal_data_vars_2025-12-25.csv")
+Temporal_data <- read.csv("03_output/Temporal_data_vars_2025-12-28.csv")
 ```
 
 # Visualize random effects
 ```{r ranef vis}
 # Models to extract effects from
 model_shared <- lmer(shared ~ 1 + (1 | id), data = Temporal_data)
-model_WTL_unique <- lmer(WTL_unique ~ 1 + (1 | id), data = Temporal_data)
-model_WTD_unique <- lmer(WTD_unique ~ 1 + (1 | id), data = Temporal_data)
+model_WTL_unique <- lmer(WTLz_unique ~ 1 + (1 | id), data = Temporal_data)
+model_WTD_unique <- lmer(WTDz_unique ~ 1 + (1 | id), data = Temporal_data)
 
 # Extract random intercepts for people
 re_shared <- ranef(model_shared, condVar = TRUE)$id %>%
@@ -343,10 +343,11 @@ ggplot(re_long, aes(x = random_intercept, fill = component)) +
   geom_density(alpha = 0.4) +
   scale_fill_manual(values = c("mediumpurple", "#66CCFF", "#FF66CC")) +
   labs(
-    x = "Random Intercept", y = "Density", fill = "Component",
-    title = ""
+    x = "Random Intercept",
+    y = "Density",
+    fill = "Component"
   ) +
-  facet_wrap(~component, ncol = 1, scales = "free") + #
+  facet_wrap(~ component, ncol = 1, scales = "free_y") +
   pub_theme +
   theme(legend.position = "none")
 ```

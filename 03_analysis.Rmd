@@ -83,7 +83,7 @@ tab <- as.data.frame(tab)
 
 write.csv(tab,
   file = paste0(
-    "02_output/WTL_WTD_cross_table_",
+    "03_output/WTL_WTD_cross_table_",
     format(Sys.Date(), "%Y-%m-%d"), ".csv"
   ),
   row.names = TRUE
@@ -92,11 +92,11 @@ write.csv(tab,
 
 # Covary the WTL out of WTD and the WTD out of WTL
 ```{r residual vars}
-# WTL without WTD
+# WTL without WTD (both raw)
 model_WTL_on_WTD <- lm(q01_ssi ~ q02_ssi, data = Baseline_data)
 Baseline_data$WTL_unique <- residuals(model_WTL_on_WTD)
 
-# WTD without WTL
+# WTD without WTL (both raw)
 model_WTD_on_WTL <- lm(q02_ssi ~ q01_ssi, data = Baseline_data)
 Baseline_data$WTD_unique <- residuals(model_WTD_on_WTL)
 
@@ -104,19 +104,17 @@ Baseline_data$WTD_unique <- residuals(model_WTD_on_WTL)
 cor(Baseline_data$WTL_unique, Baseline_data$q02_ssi)
 cor(Baseline_data$WTD_unique, Baseline_data$q01_ssi)
 
-# Summary
-describe(Baseline_data[, c("WTL_unique", "WTD_unique")])
-
 # Reverse-score WTL so higher = stronger wish to live
 Baseline_data <- Baseline_data %>%
   mutate(
     q01_ssi_rev = max(q01_ssi, na.rm = TRUE) - q01_ssi
   )
 
+# WTL without WTD (WTL reversed)
 model_WTL_on_WTD_rev <- lm(q01_ssi_rev ~ q02_ssi, data = Baseline_data)
 Baseline_data$WTL_unique_rev <- residuals(model_WTL_on_WTD_rev)
 
-# WTD without WTL
+# WTD without WTL (WTL reversed)
 model_WTD_on_WTL_rev <- lm(q02_ssi ~ q01_ssi_rev, data = Baseline_data)
 Baseline_data$WTD_unique_rev <- residuals(model_WTD_on_WTL_rev)
 
@@ -124,14 +122,33 @@ Baseline_data$WTD_unique_rev <- residuals(model_WTD_on_WTL_rev)
 cor(Baseline_data$WTL_unique_rev, Baseline_data$q02_ssi)
 cor(Baseline_data$WTD_unique_rev, Baseline_data$q01_ssi_rev)
 
+# Make standardized versions for direct magnitude comparability
+Baseline_data <- Baseline_data %>%
+  mutate(
+    q01_ssi_z = scale(q01_ssi),
+    q02_ssi_z = scale(q02_ssi)
+  )
+
+# WTL without WTD (both standardized)
+Baseline_data$WTLz_unique <- resid(lm(q01_ssi_z ~ q02_ssi_z, data = Baseline_data))
+
+# WTD without WTL (both standardized)
+Baseline_data$WTDz_unique <- resid(lm(q02_ssi_z ~ q01_ssi_z, data = Baseline_data))
+
+
 # Summary
-describe(Baseline_data[, c("WTL_unique", "WTL_unique_rev", "WTD_unique", "WTD_unique_rev")])
+describe(Baseline_data[, c(
+  "WTL_unique", "WTL_unique_rev",
+  "WTD_unique", "WTD_unique_rev",
+  "WTLz_unique", "WTDz_unique"
+)])
 ```
 
 # Isolate the shared variation among WTL/WTD
 ```{r shared var pca}
 # Doing this with principal component analysis
 pc <- prcomp(Baseline_data[, c("q01_ssi", "q02_ssi")], scale. = TRUE)
+# equivalent to prcomp(Baseline_data[, c("q01_ssi_z", "q02_ssi_z")], scale. = FALSE)
 
 # Create shared variation variable
 # Specifically, the first principal component to capture maximal shared variance
@@ -140,9 +157,6 @@ Baseline_data$WTL_WTD_shared <- pc$x[, 1]
 # Verify correlation with original variables
 cor(Baseline_data$WTL_WTD_shared, Baseline_data$q01_ssi)
 cor(Baseline_data$WTL_WTD_shared, Baseline_data$q02_ssi)
-
-# Look at descriptives
-describe(Baseline_data[, c("WTL_unique", "WTD_unique", "WTL_WTD_shared")])
 ```
 
 
@@ -236,9 +250,9 @@ cor(
 # Absolute-value table for dominance
 tri <- Baseline_data %>%
   dplyr::transmute(
-    `WTL Unique` = abs(WTL_unique),
+    `WTL Unique` = abs(WTLz_unique),
     `Shared Component` = abs(WTL_WTD_shared),
-    `WTD Unique` = abs(WTD_unique)
+    `WTD Unique` = abs(WTDz_unique)
   )
 
 # Assign dominant component (by magnitude)
@@ -249,9 +263,9 @@ Baseline_data$Dominant_component <-
 Baseline_data$Dominant_signed <- with(
   Baseline_data,
   ifelse(
-    Dominant_component == "WTL Unique", WTL_unique,
+    Dominant_component == "WTL Unique", WTLz_unique,
     ifelse(
-      Dominant_component == "WTD Unique", WTD_unique,
+      Dominant_component == "WTD Unique", WTDz_unique,
       WTL_WTD_shared
     )
   )
@@ -275,12 +289,9 @@ table(
 # Compare magnitude of unique vs shared variation at the individual level
 ```{r paired t}
 # Create absolute-values of residualized/shared variation
-Baseline_data$WTL_unique_abs <- abs(Baseline_data$WTL_unique)
-Baseline_data$WTD_unique_abs <- abs(Baseline_data$WTD_unique)
+Baseline_data$WTL_unique_abs <- abs(Baseline_data$WTLz_unique)
+Baseline_data$WTD_unique_abs <- abs(Baseline_data$WTDz_unique)
 Baseline_data$WTL_WTD_shared_abs <- abs(Baseline_data$WTL_WTD_shared)
-
-# Also make a combined unique score
-Baseline_data$Unique_combined_abs <- Baseline_data$WTL_unique_abs + Baseline_data$WTD_unique_abs
 
 # Make a variable for the maximum unique absolute value
 Baseline_data$Unique_max_abs <- pmax(
@@ -288,9 +299,8 @@ Baseline_data$Unique_max_abs <- pmax(
   Baseline_data$WTD_unique_abs
 )
 
-
 # Look at descriptives
-describe(Baseline_data[, c("WTL_unique_abs", "WTD_unique_abs", "Unique_max_abs", "Unique_combined_abs", "WTL_WTD_shared_abs")])
+describe(Baseline_data[, c("WTL_unique_abs", "WTD_unique_abs", "Unique_max_abs", "WTL_WTD_shared_abs")])
 
 # Paired t-tests
 jmv::ttestPS(
@@ -309,7 +319,7 @@ jmv::ttestPS(
 )
 ```
 
-# Overall model R2/significance for WTL+WTD (raw)
+# Overall model R2/significance for WTL and WTD (raw)
 ```{r regr concurrent}
 # Loop outcomes and regression models
 outcomes <- c("bdi", "bhs", "srcs17", "inq_pb", "inq_tb", "rls")
@@ -334,7 +344,7 @@ summary(regression_models_1[["regression_rls_1"]])
 olsrr::ols_coll_diag(regression_models_1[["regression_bdi_1"]])
 ```
 
-# Decompose R2 via commonality analysis 
+# Decompose R2 with commonality analysis 
 ```{r commonality}
 # Loop commonality outcomes
 commonality_results_1 <- setNames(lapply(outcomes, function(outcome) {
@@ -357,7 +367,7 @@ commonality_results_1[["commonality_inq_pb_1"]]
 commonality_results_1[["commonality_inq_tb_1"]]
 ```
 
-# Unique + shared variation correlations
+# Unique and shared variation correlations 
 Use the residualized and shared variables for correlations with outcomes
 ```{r resid cors}
 # Correlations variables
@@ -365,8 +375,8 @@ Corr_vars <- Baseline_data %>%
   dplyr::select(
     q01_ssi, # Raw WTL
     q02_ssi, # Raw WTD
-    WTL_unique, # WTL without WTD
-    WTD_unique, # WTD without WTL
+    WTLz_unique, # WTL without WTD
+    WTDz_unique, # WTD without WTL
     WTL_WTD_shared, # WTL-WTD common, without unique
     bdi,
     bhs,
@@ -472,17 +482,29 @@ pc_rank <- prcomp(Baseline_data[, c("q01_ssi_rank", "q02_ssi_rank")],
 Baseline_data$WTL_WTD_shared_rank <- pc_rank$x[, 1]
 
 # Check convergence with linear residuals
-# WTL residuals correlation (lin vs rank)
-round(cor(Baseline_data$WTL_unique, Baseline_data$WTL_unique_rank, use = "p"), 5) # 0.980
-# WTD residuals correlation (lin vs rank)
-round(cor(Baseline_data$WTD_unique, Baseline_data$WTD_unique_rank, use = "p"), 5) # 0.992
-# Shared correlation (PCA vs rank PCA)
-round(cor(Baseline_data$WTL_WTD_shared, Baseline_data$WTL_WTD_shared_rank, use = "p"), 5) # 0.994
+# WTL residuals correlation (linear vs rank-based)
+round(cor(Baseline_data$WTL_unique,
+  Baseline_data$WTL_unique_rank,
+  use = "p"
+), 5) # 0.980
+
+# WTD residuals correlation (linear vs rank-based)
+round(cor(Baseline_data$WTD_unique,
+  Baseline_data$WTD_unique_rank,
+  use = "p"
+), 5) # 0.992
+
+# Shared correlation (raw PCA vs rank-based PCA)
+round(cor(Baseline_data$WTL_WTD_shared,
+  Baseline_data$WTL_WTD_shared_rank,
+  use = "p"
+), 5) # 0.994
 ```
 
 # correlations sensitivity
 Use polyserial correlations for raw/residualized/shared correlations 
 ```{r polyserial}
+# Loop outcomes
 outcomes <- c("bdi", "bhs", "srcs17", "inq_pb", "inq_tb", "rls")
 
 if (!require("polycor")) {
@@ -494,16 +516,16 @@ cor_results <- lapply(outcomes, function(out) {
   # Pearson correlations
   pearson_WTL_raw <- cor(Baseline_data$q01_ssi, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
   pearson_WTD_raw <- cor(Baseline_data$q02_ssi, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
-  pearson_WTL_resid <- cor(Baseline_data$WTL_unique, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
-  pearson_WTD_resid <- cor(Baseline_data$WTD_unique, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
+  pearson_WTL_resid <- cor(Baseline_data$WTLz_unique, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
+  pearson_WTD_resid <- cor(Baseline_data$WTDz_unique, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
   pearson_shared <- cor(Baseline_data$WTL_WTD_shared, Baseline_data[[out]], use = "pairwise.complete.obs", method = "pearson")
 
   # Polyserial correlations
   # First variable needs to be continuous, second one needs to be ordinal (or is treated as such)
   polyserial_WTL_raw <- polycor::polyserial(Baseline_data[[out]], Baseline_data$q01_ssi, ML = TRUE)
   polyserial_WTD_raw <- polycor::polyserial(Baseline_data[[out]], Baseline_data$q02_ssi, ML = TRUE)
-  polyserial_WTL_resid <- polycor::polyserial(Baseline_data[[out]], Baseline_data$WTL_unique, ML = TRUE)
-  polyserial_WTD_resid <- polycor::polyserial(Baseline_data[[out]], Baseline_data$WTD_unique, ML = TRUE)
+  polyserial_WTL_resid <- polycor::polyserial(Baseline_data[[out]], Baseline_data$WTLz_unique, ML = TRUE)
+  polyserial_WTD_resid <- polycor::polyserial(Baseline_data[[out]], Baseline_data$WTDz_unique, ML = TRUE)
   polyserial_shared <- polycor::polyserial(Baseline_data[[out]], Baseline_data$WTL_WTD_shared, ML = TRUE)
 
   data.frame(
@@ -539,85 +561,136 @@ cor(cor_results_df$pearson_shared, cor_results_df$polyserial_shared)
 
 # Longitudinal models of shared vs unique WTL/WTD variation
 ```{r residualize and pca temporal}
-# Residualize per timepoint
+# Standardize fir each timepoint
 Temporal_data <- Temporal_data %>%
   group_by(month) %>%
   mutate(
-    WTL_unique = residuals(lm(q01_ssi ~ q02_ssi, na.action = na.exclude)),
-    WTD_unique = residuals(lm(q02_ssi ~ q01_ssi, na.action = na.exclude))
+    q01_ssi_z = as.numeric(scale(q01_ssi)),
+    q02_ssi_z = as.numeric(scale(q02_ssi))
   ) %>%
   ungroup()
 
-# Extract shared component per timepoint 
+# Residualize for each timepoint
+Temporal_data <- Temporal_data %>%
+  group_by(month) %>%
+  mutate(
+    WTLz_unique = resid(lm(q01_ssi_z ~ q02_ssi_z, na.action = na.exclude)),
+    WTDz_unique = resid(lm(q02_ssi_z ~ q01_ssi_z, na.action = na.exclude))
+  ) %>%
+  ungroup()
+
+# Extract shared component for each timepoint
 Temporal_data <- Temporal_data %>%
   group_by(month) %>%
   mutate(
     shared = {
       temp <- cbind(q01_ssi, q02_ssi)
       complete_idx <- complete.cases(temp)
-      pc <- prcomp(temp[complete_idx, ], scale. = TRUE)  
-      shared_vec <- rep(NA, n()) # Deal with missing
-      shared_vec[complete_idx] <- pc$x[,1]
+      pc <- prcomp(temp[complete_idx, ], scale. = TRUE)
+      shared_vec <- rep(NA, n()) # Deal with missing without deleting
+      shared_vec[complete_idx] <- pc$x[, 1]
       shared_vec
     }
   ) %>%
   ungroup()
 
-# Sanity check 
+# Sanity check
 # Make sure the residualized WTL/WTD and PCA at baseline match what was done above
 baseline_check <- Temporal_data %>%
   filter(month == 0) %>%
-  select(id, WTL_unique, WTD_unique, shared) %>%
+  select(id, WTLz_unique, WTDz_unique, shared) %>%
   left_join(
     Baseline_data %>%
-      select(id, WTL_unique, WTD_unique, WTL_WTD_shared),
+      select(id, WTLz_unique, WTDz_unique, WTL_WTD_shared),
     by = "id",
     suffix = c("_temporal", "_baseline")
   )
 
 baseline_check %>%
   summarise(
-    cor_WTL = cor(WTL_unique_temporal, WTL_unique_baseline, use = "pairwise.complete.obs"),
-    cor_WTD = cor(WTD_unique_temporal, WTD_unique_baseline, use = "pairwise.complete.obs"),
+    cor_WTL = cor(WTLz_unique_temporal, WTLz_unique_baseline, use = "pairwise.complete.obs"),
+    cor_WTD = cor(WTDz_unique_temporal, WTDz_unique_baseline, use = "pairwise.complete.obs"),
     cor_shared = cor(shared, WTL_WTD_shared, use = "pairwise.complete.obs")
+  ) # Good
+
+# Another sanity check to make sure NA logic worked
+# Isolate the longitudinal dataset to month 3 and remove people missing raw WTL/WTD
+month3_check <- Temporal_data %>%
+  filter(month == 3) %>%
+  select(id, q01_ssi_z, q02_ssi_z, WTLz_unique, WTDz_unique, shared, q01_ssi, q02_ssi) %>%
+  filter(!is.na(q01_ssi) & !is.na(q02_ssi))
+
+# Recalculate residuals and PCA for month 3 only
+# WTL without WTD
+model_WTL_on_WTD_m3 <- lm(q01_ssi_z ~ q02_ssi_z, data = month3_check)
+month3_check$WTL_unique_check <- residuals(model_WTL_on_WTD_m3)
+
+# WTD without WTL
+model_WTD_on_WTL_m3 <- lm(q02_ssi_z ~ q01_ssi_z, data = month3_check)
+month3_check$WTD_unique_check <- residuals(model_WTD_on_WTL_m3)
+
+# PCA
+pc_m3 <- prcomp(month3_check[, c("q01_ssi_z", "q02_ssi_z")], scale. = FALSE)
+month3_check$shared_check <- pc_m3$x[, 1]
+
+# Compare
+month3_check %>%
+  summarise(
+    cor_WTL = cor(WTLz_unique, WTL_unique_check, use = "pairwise.complete.obs"),
+    cor_WTD = cor(WTDz_unique, WTD_unique_check, use = "pairwise.complete.obs"),
+    cor_shared = cor(shared, shared_check, use = "pairwise.complete.obs")
   ) # Good
 ```
 
 # Multilevel models 
 ```{r mlms}
+# Number of participants/observations
+n_distinct(Temporal_data$id) # 192
+nrow(Temporal_data) # 586
+nrow(Temporal_data %>% filter(!is.na(shared))) # 537 complete obs
+
 # Shared component
 model_shared <- lmer(shared ~ 1 + (1 | id), data = Temporal_data)
 
-# WTL_unique  
-model_WTL_unique <- lmer(WTL_unique ~ 1 + (1 | id), data = Temporal_data)
+# WTL_unique
+model_WTL_unique <- lmer(WTLz_unique ~ 1 + (1 | id), data = Temporal_data)
 
 # WTD_unique
-model_WTD_unique <- lmer(WTD_unique ~ 1 + (1 | id), data = Temporal_data)
+model_WTD_unique <- lmer(WTDz_unique ~ 1 + (1 | id), data = Temporal_data)
 
-# Model summaries 
+# WTD raw
+model_WTD_raw <- lmer(q02_ssi ~ 1 + (1 | id), data = Temporal_data)
+
+# WTL raw
+model_WTL_raw <- lmer(q01_ssi ~ 1 + (1 | id), data = Temporal_data)
+
+# Model summaries
 summary(model_shared)
-summary(model_WTL_unique) 
+summary(model_WTL_unique)
 summary(model_WTD_unique)
 
 # Variance components table
-r2(model_shared)      
-icc(model_shared)     
+r2(model_shared)
+icc(model_shared)
 VarCorr(model_shared)
 
 # Results table (random effects only)
 sjPlot::tab_model(
-  model_shared, model_WTD_unique, model_WTL_unique
+  model_shared, model_WTD_unique, model_WTL_unique, model_WTL_raw, model_WTD_raw
 )
 ```
 
 # Save baseline dataset with new variables
-- residualized WTD/WTL, 
-- rank-transformed WTL/WTD and those residuals; 
-- the shared PCA component (raw and from rank-transformed), 
-- absolute values of residualized WTD/WTL + shared PCA component
+- residualized WTD/WTL (raw)
+- residualized WTD/WTL (z-transformed)
+- rank-transformed WTL/WTD and those residuals
+- the shared PCA component (raw and from rank-transformed)
+- absolute values of residualized WTD/WTL (z-transformed)
+- absolute value of shared PCA component (z-transformed)
 - dominant component of absolute values
 
 # Save longitudinal dataset with new variables
+- z-transformed WTD/WTL (each timepoint)
 - residualized WTD/WTL (each timepoint)
 - shared PCA component (each timepoint)
   
@@ -625,7 +698,7 @@ sjPlot::tab_model(
 # Baseline
 write.csv(Baseline_data,
   file = paste0(
-    "02_output/Baseline_data_vars_",
+    "03_output/Baseline_data_vars_",
     format(Sys.Date(), "%Y-%m-%d"), ".csv"
   ),
   row.names = TRUE
@@ -634,7 +707,7 @@ write.csv(Baseline_data,
 # Temporal
 write.csv(Temporal_data,
   file = paste0(
-    "02_output/Temporal_data_vars_",
+    "03_output/Temporal_data_vars_",
     format(Sys.Date(), "%Y-%m-%d"), ".csv"
   ),
   row.names = TRUE
